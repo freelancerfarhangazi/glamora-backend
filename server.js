@@ -9,12 +9,11 @@ const app = express();
 // --- 1. MIDDLEWARE ---
 app.use(express.json());
 
-// UPDATED CORS: This allows your specific Netlify site to talk to this Render server
 app.use(cors({
     origin: [
         'https://glamora-store.netlify.app', 
-        'http://127.0.0.1:5500', // For local testing
-        'http://localhost:5500'   // For local testing
+        'http://127.0.0.1:5500', 
+        'http://localhost:5500'   
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
@@ -45,9 +44,18 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// NEW: Order Schema
+const orderSchema = new mongoose.Schema({
+  userEmail: { type: String, required: true },
+  items: Array, // Stores objects like { name, price, quantity }
+  totalAmount: Number,
+  status: { type: String, default: 'Processing' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Order = mongoose.model('Order', orderSchema);
+
 // --- 4. API ROUTES ---
 
-// Health Check (To see if server is awake)
 app.get('/', (req, res) => {
     res.send('Glamora API is Running...');
 });
@@ -69,7 +77,7 @@ app.post('/api/products', async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error) {
-    res.status(400).json({ error: "Failed to add product. Ensure ProductID is unique." });
+    res.status(400).json({ error: "Failed to add product." });
   }
 });
 
@@ -77,13 +85,10 @@ app.post('/api/products', async (req, res) => {
 app.post('/api/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
         return res.status(400).json({ error: "Email already registered" });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({ email, password: hashedPassword });
     await newUser.save();
@@ -98,13 +103,8 @@ app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
-    
     if (user && await bcrypt.compare(password, user.password)) {
-      res.json({ 
-          message: "Login successful!", 
-          userId: user._id,
-          email: user.email 
-      });
+      res.json({ message: "Login successful!", userId: user._id, email: user.email });
     } else {
       res.status(401).json({ error: "Invalid email or password" });
     }
@@ -113,8 +113,31 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// --- NEW ORDER ROUTES ---
+
+// [POST] Create a new order (Checkout)
+app.post('/api/orders', async (req, res) => {
+  try {
+    const newOrder = new Order(req.body);
+    await newOrder.save();
+    res.status(201).json(newOrder);
+  } catch (error) {
+    res.status(400).json({ error: "Failed to place order" });
+  }
+});
+
+// [GET] Get orders for a specific user
+app.get('/api/orders/:email', async (req, res) => {
+  try {
+    const orders = await Order.find({ userEmail: req.params.email }).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
 // --- 5. START SERVER ---
-const PORT = process.env.PORT || 10000; // Render usually uses 10000
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Glamora Server running on port ${PORT}`);
 });
